@@ -30,10 +30,11 @@ On first launch, you'll be prompted to create an admin account.
 
 ### Configuration
 
-| Environment Variable | Default | Description |
+| Variable | Default | Description |
 |---|---|---|
 | `SECRET_KEY` | `change-me-in-production` | Flask session secret — **change this** |
-| `DATA_DIR` | `/app/data` | Data directory inside the container |
+| `PUID` | `1000` | User ID the container runs as |
+| `PGID` | `1000` | Group ID the container runs as |
 
 Set your secret key:
 
@@ -45,6 +46,22 @@ Or create a `.env` file next to the compose file:
 
 ```
 SECRET_KEY=your-random-secret-here
+```
+
+### Synology / NAS Users
+
+Set `PUID` and `PGID` to match your NAS user. Find your IDs by running `id` via SSH on your NAS:
+
+```
+PUID=1026
+PGID=100
+SECRET_KEY=your-random-secret-here
+```
+
+Make sure the `data` directory is owned by the same user:
+
+```bash
+chown -R 1026:100 ./data
 ```
 
 ### Data Persistence
