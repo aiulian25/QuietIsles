@@ -1271,7 +1271,7 @@ def security_headers(response):
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: blob: https://api.qrserver.com https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org",
-        "connect-src 'self' https://nominatim.openstreetmap.org",
+        "connect-src 'self' https://nominatim.openstreetmap.org https://unpkg.com",
         "media-src 'self' blob:",
         "frame-ancestors 'self'",
         "base-uri 'self'",
@@ -1281,10 +1281,9 @@ def security_headers(response):
 
     # Permissions Policy — disable unused browser features
     response.headers["Permissions-Policy"] = (
-        "accelerometer=(), ambient-light-sensor=(), autoplay=(), "
-        "battery=(), camera=(self), display-capture=(), "
-        "geolocation=(self), gyroscope=(), magnetometer=(), "
-        "microphone=(), midi=(), payment=(), usb=()"
+        "accelerometer=(), autoplay=(), camera=(self), "
+        "display-capture=(), geolocation=(self), gyroscope=(), "
+        "magnetometer=(), microphone=(), midi=(), payment=(), usb=()"
     )
 
     # HSTS — only when behind HTTPS (detected by X-Forwarded-Proto)
