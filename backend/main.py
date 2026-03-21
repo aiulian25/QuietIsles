@@ -52,7 +52,7 @@ app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB upload limit
 
 # --- Session hardening ---
 app.config["SESSION_COOKIE_HTTPONLY"] = True
-app.config["SESSION_COOKIE_SAMESITE"] = "Strict"
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=12)
 # SESSION_COOKIE_SECURE should be True behind HTTPS reverse proxy
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("SECURE_COOKIES", "").lower() in ("1", "true", "yes")
