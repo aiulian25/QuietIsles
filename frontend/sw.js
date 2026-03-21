@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quiet-isles-v5';
+const CACHE_NAME = 'quiet-isles-v6';
 const STATIC_ASSETS = [
     '/',
     '/css/tailwind.css',
@@ -16,6 +16,8 @@ const STATIC_ASSETS = [
     '/js/pages/memories.js',
     '/js/pages/settings.js',
     '/manifest.json',
+    '/icon-192.png',
+    '/icon-512.png',
     '/assets/logo.png',
 ];
 
