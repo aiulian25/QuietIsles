@@ -1,0 +1,38 @@
+# Data & runtime (DB, media, backups, API-pulled data)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Project docs / personal notes
+Quiet Isles.txt
+PLAN.md
+Security.md
+Interface/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Node
+node_modules/
+package-lock.json
+
+# Built assets
+frontend/css/tailwind.css
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Environment
+.env
+*.log

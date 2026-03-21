@@ -1,0 +1,9 @@
+bind = "0.0.0.0:2145"
+workers = 1  # Single worker to share sync_status dict with background threads
+threads = 4  # Use threads for concurrency instead
+worker_class = "gthread"
+timeout = 120
+keepalive = 5
+accesslog = "-"
+errorlog = "-"
+loglevel = "info"

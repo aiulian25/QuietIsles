@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html class="dark" lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+    <meta name="theme-color" content="#0d0f0e"/>
+    <meta name="mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+    <meta name="description" content="Quiet Isles — Discover beautiful UK landscape places. Mountains, beaches, cliffs, viewpoints, trails and protected areas."/>
+    <title>Quiet Isles</title>
+    <link rel="manifest" href="/manifest.json"/>
+    <link rel="icon" type="image/png" href="/assets/logo.png"/>
+    <link rel="apple-touch-icon" href="/assets/logo.png"/>
+    <link rel="stylesheet" href="/css/tailwind.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <link rel="stylesheet" href="/css/app.css"/>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary overscroll-none">
+    <div id="app" class="flex min-h-screen">
+        <!-- Desktop Sidebar -->
+        <aside id="sidebar" class="hidden md:flex flex-col py-8 px-6 h-screen sticky top-0 bg-[#0d0f0e] border-r border-[#434946]/15 w-64 z-40">
+            <a href="/" data-link class="flex items-center gap-3 mb-8">
+                <img src="/assets/logo.png" alt="Quiet Isles" class="w-8 h-8 rounded-lg"/>
+                <span class="text-xl font-bold text-primary font-headline tracking-tighter">Quiet Isles</span>
+            </a>
+            <nav id="sidebar-nav" class="flex flex-col gap-2 flex-grow">
+                <a href="/" data-link class="nav-item flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-outline hover:bg-surface-container-low hover:text-on-surface" data-page="home">
+                    <span class="material-symbols-outlined">home</span>
+                    <span class="font-headline text-sm">Home</span>
+                </a>
+                <a href="/explore" data-link class="nav-item flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-outline hover:bg-surface-container-low hover:text-on-surface" data-page="explore">
+                    <span class="material-symbols-outlined">map</span>
+                    <span class="font-headline text-sm">Explore</span>
+                </a>
+                <a href="/saved" data-link class="nav-item flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-outline hover:bg-surface-container-low hover:text-on-surface" data-page="saved">
+                    <span class="material-symbols-outlined">favorite</span>
+                    <span class="font-headline text-sm">Saved Trails</span>
+                </a>
+                <a href="/memories" data-link class="nav-item flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-outline hover:bg-surface-container-low hover:text-on-surface" data-page="memories">
+                    <span class="material-symbols-outlined">photo_camera</span>
+                    <span class="font-headline text-sm">Memories</span>
+                </a>
+                <a href="/settings" data-link class="nav-item flex items-center gap-4 px-4 py-3 rounded-xl transition-all text-outline hover:bg-surface-container-low hover:text-on-surface" data-page="settings">
+                    <span class="material-symbols-outlined">settings</span>
+                    <span class="font-headline text-sm">Settings</span>
+                </a>
+            </nav>
+            <div class="mt-auto flex items-center gap-3 p-3 bg-surface-container-low rounded-xl">
+                <img src="/assets/logo.png" alt="Quiet Isles" class="w-10 h-10 rounded-full object-cover"/>
+                <div class="overflow-hidden">
+                    <div class="text-xs font-bold text-primary truncate">Quiet Isles</div>
+                    <div class="text-[10px] text-outline truncate">The Atmospheric Curator</div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main id="main-content" class="flex-1 relative min-h-screen">
+            <!-- Top Bar -->
+            <header id="topbar" class="fixed top-0 w-full z-50 bg-[#0d0f0e]/80 backdrop-blur-xl flex justify-between items-center px-6 py-4 transition-all">
+                <a href="/" data-link class="md:hidden text-2xl font-bold tracking-tighter text-primary font-headline flex items-center gap-2">
+                    <img src="/assets/logo.png" alt="" class="w-7 h-7 rounded-lg"/>
+                    Quiet Isles
+                </a>
+                <div class="hidden md:block"></div>
+                <div class="flex items-center gap-4">
+                    <button id="search-toggle" class="p-2 rounded-full hover:bg-surface-container transition-colors text-primary">
+                        <span class="material-symbols-outlined">search</span>
+                    </button>
+                </div>
+            </header>
+
+            <!-- Page Content (rendered by JS router) -->
+            <div id="page-content"></div>
+        </main>
+
+        <!-- Mobile Bottom Nav -->
+        <nav id="mobile-nav" class="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-[90%] max-w-md bg-surface-container-high/60 backdrop-blur-2xl rounded-full px-6 py-3 flex justify-between items-center z-50 shadow-[0_0_40px_rgba(0,0,0,0.4)] border border-white/5">
+            <a href="/" data-link class="mobile-nav-item flex flex-col items-center justify-center text-outline hover:text-on-surface transition-colors" data-page="home">
+                <span class="material-symbols-outlined">home</span>
+                <span class="text-[10px] font-headline uppercase tracking-widest mt-1">Home</span>
+            </a>
+            <a href="/explore" data-link class="mobile-nav-item flex flex-col items-center justify-center text-outline hover:text-on-surface transition-colors" data-page="explore">
+                <span class="material-symbols-outlined">explore</span>
+                <span class="text-[10px] font-headline uppercase tracking-widest mt-1">Explore</span>
+            </a>
+            <a href="/saved" data-link class="mobile-nav-item flex flex-col items-center justify-center text-outline hover:text-on-surface transition-colors" data-page="saved">
+                <span class="material-symbols-outlined">bookmark</span>
+                <span class="text-[10px] font-headline uppercase tracking-widest mt-1">Saved</span>
+            </a>
+            <a href="/memories" data-link class="mobile-nav-item flex flex-col items-center justify-center text-outline hover:text-on-surface transition-colors" data-page="memories">
+                <span class="material-symbols-outlined">photo_camera</span>
+                <span class="text-[10px] font-headline uppercase tracking-widest mt-1">Memories</span>
+            </a>
+            <a href="/settings" data-link class="mobile-nav-item flex flex-col items-center justify-center text-outline hover:text-on-surface transition-colors" data-page="settings">
+                <span class="material-symbols-outlined">settings</span>
+                <span class="text-[10px] font-headline uppercase tracking-widest mt-1">Settings</span>
+            </a>
+        </nav>
+    </div>
+
+    <!-- Search Overlay -->
+    <div id="search-overlay" class="fixed inset-0 z-[100] bg-surface/95 backdrop-blur-xl hidden flex-col">
+        <div class="p-6 max-w-2xl mx-auto w-full">
+            <div class="flex items-center gap-4 mb-8">
+                <div class="flex-1 flex items-center bg-surface-container-highest rounded-full px-5 py-3">
+                    <span class="material-symbols-outlined text-outline mr-3">search</span>
+                    <input id="search-input" type="text" placeholder="Search landscapes..." class="bg-transparent border-none focus:ring-0 text-base w-full placeholder:text-outline/50 outline-none"/>
+                </div>
+                <button id="search-close" class="p-2 text-on-surface">
+                    <span class="material-symbols-outlined">close</span>
+                </button>
+            </div>
+            <div id="search-results" class="space-y-4"></div>
+        </div>
+    </div>
+
+    <script src="/js/api.js"></script>
+    <script src="/js/components/nav.js"></script>
+    <script src="/js/components/card.js"></script>
+    <script src="/js/components/map.js"></script>
+    <script src="/js/pages/login.js"></script>
+    <script src="/js/pages/home.js"></script>
+    <script src="/js/pages/explore.js"></script>
+    <script src="/js/pages/detail.js"></script>
+    <script src="/js/pages/saved.js"></script>
+    <script src="/js/pages/memories.js"></script>
+    <script src="/js/pages/settings.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

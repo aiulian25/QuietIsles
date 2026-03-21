@@ -1,0 +1,20 @@
+{
+    "name": "Quiet Isles",
+    "short_name": "QuietIsles",
+    "description": "Discover beautiful UK landscape places — mountains, beaches, cliffs, viewpoints, trails and protected areas.",
+    "start_url": "/",
+    "display": "standalone",
+    "background_color": "#0d0f0e",
+    "theme_color": "#0d0f0e",
+    "orientation": "portrait-primary",
+    "scope": "/",
+    "icons": [
+        {
+            "src": "/assets/logo.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ],
+    "categories": ["travel", "navigation", "lifestyle"]
+}
