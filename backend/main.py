@@ -1267,7 +1267,7 @@ def security_headers(response):
     # Content Security Policy
     csp = "; ".join([
         "default-src 'self'",
-        "script-src 'self' https://unpkg.com",
+        "script-src 'self' 'unsafe-inline' https://unpkg.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://unpkg.com",
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data: blob: https://api.qrserver.com https://*.basemaps.cartocdn.com https://*.tile.openstreetmap.org",
