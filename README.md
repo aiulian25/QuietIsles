@@ -20,6 +20,7 @@ The easiest way to run Quiet Isles — just download `docker-compose.deploy.yml`
 
 ```bash
 curl -O https://raw.githubusercontent.com/aiulian25/QuietIsles/main/docker-compose.deploy.yml
+mkdir -p data
 docker compose -f docker-compose.deploy.yml up -d
 ```
 

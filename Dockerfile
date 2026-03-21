@@ -36,6 +36,7 @@ RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
 
 # Copy backend
 COPY backend/ /app/backend/
+RUN chmod +x /app/backend/entrypoint.sh
 
 # Copy frontend
 COPY frontend/ /app/frontend/
@@ -61,4 +62,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 EXPOSE 2145
 
 # Initialize DB then start gunicorn
-CMD ["sh", "-c", "python -c 'from models import init_db; init_db(); from auth import init_auth_db; init_auth_db()' && gunicorn -c gunicorn.conf.py main:app"]
+CMD ["/app/backend/entrypoint.sh"]
