@@ -15,7 +15,7 @@ OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 NOMINATIM_URL = "https://nominatim.openstreetmap.org"
 
 # User agent for OSM APIs (required by usage policy)
-OSM_USER_AGENT = "QuietIsles/1.0 (landscape-discovery-app)"
+OSM_USER_AGENT = "QuietIsles/1.0 (landscape-discovery-app; https://github.com/aiulian25/quietisles)"
 
 # UK bounding box (lat/lon)
 UK_BBOX = {

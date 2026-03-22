@@ -13,14 +13,43 @@ WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
 COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 THUMB_WIDTH = 800
-REQUEST_DELAY = 0.1  # seconds between API calls
+REQUEST_DELAY = 0.5  # seconds between API calls
+COMMONS_DELAY = 1.0  # slower for Commons to avoid rate limiting
 
 
 def _session():
     s = requests.Session()
     s.headers["User-Agent"] = OSM_USER_AGENT
-    s.timeout = 15
+    s.headers["Api-User-Agent"] = OSM_USER_AGENT
+    s.timeout = 30
     return s
+
+
+def _api_get(sess, url, params, max_retries=5):
+    """Make an API GET with retry on rate limiting."""
+    for attempt in range(max_retries):
+        try:
+            resp = sess.get(url, params=params)
+        except requests.exceptions.RequestException as e:
+            logger.warning(f"Request error for {url}: {e}, retrying in {30*(attempt+1)}s")
+            time.sleep(30 * (attempt + 1))
+            continue
+        if resp.status_code == 429 or "too many requests" in resp.text[:200].lower():
+            wait = 30 * (attempt + 1)
+            logger.warning(f"Rate limited by {url}, waiting {wait}s (attempt {attempt+1})")
+            time.sleep(wait)
+            continue
+        return resp
+    logger.error(f"Rate limited after {max_retries} retries on {url}, cooling down 120s")
+    time.sleep(120)
+    # One final attempt after long cooldown
+    try:
+        resp = sess.get(url, params=params)
+        if resp.status_code != 429:
+            return resp
+    except requests.exceptions.RequestException:
+        pass
+    return None
 
 
 def _commons_thumb_url(filename, width=THUMB_WIDTH):
@@ -46,7 +75,7 @@ def image_from_wikipedia(title, sess=None):
 
     sess = sess or _session()
     try:
-        resp = sess.get(WIKIPEDIA_API, params={
+        resp = _api_get(sess, WIKIPEDIA_API, params={
             "action": "query",
             "titles": title,
             "prop": "pageimages",
@@ -54,7 +83,6 @@ def image_from_wikipedia(title, sess=None):
             "pithumbsize": THUMB_WIDTH,
             "pilicense": "any",
         })
-        resp.raise_for_status()
         pages = resp.json().get("query", {}).get("pages", {})
         for page in pages.values():
             thumb = page.get("thumbnail", {}).get("source", "")
@@ -71,13 +99,12 @@ def image_from_wikidata(qid, sess=None):
         return ""
     sess = sess or _session()
     try:
-        resp = sess.get(WIKIDATA_API, params={
+        resp = _api_get(sess, WIKIDATA_API, params={
             "action": "wbgetclaims",
             "entity": qid,
             "property": "P18",
             "format": "json",
         })
-        resp.raise_for_status()
         claims = resp.json().get("claims", {}).get("P18", [])
         if claims:
             filename = claims[0].get("mainsnak", {}).get("datavalue", {}).get("value", "")
@@ -116,7 +143,7 @@ def image_from_commons_search(name, category="", county="", sess=None):
 
     sess = sess or _session()
     try:
-        resp = sess.get(COMMONS_API, params={
+        resp = _api_get(sess, COMMONS_API, params={
             "action": "query",
             "generator": "search",
             "gsrnamespace": 6,  # File namespace
@@ -127,7 +154,6 @@ def image_from_commons_search(name, category="", county="", sess=None):
             "iiurlwidth": THUMB_WIDTH,
             "format": "json",
         })
-        resp.raise_for_status()
         pages = resp.json().get("query", {}).get("pages", {})
         for page in pages.values():
             info = page.get("imageinfo", [{}])[0]
@@ -167,14 +193,13 @@ def fetch_wikipedia_extracts(places_data, progress_callback=None):
         for batch_start in range(0, len(qids_list), 50):
             batch = qids_list[batch_start:batch_start + 50]
             try:
-                resp = sess_wd.get(WIKIDATA_API, params={
+                resp = _api_get(sess_wd, WIKIDATA_API, params={
                     "action": "wbgetentities",
                     "ids": "|".join(batch),
                     "props": "sitelinks",
                     "sitefilter": "enwiki",
                     "format": "json",
                 })
-                resp.raise_for_status()
                 entities = resp.json().get("entities", {})
                 for qid, entity in entities.items():
                     sitelinks = entity.get("sitelinks", {})
@@ -197,7 +222,7 @@ def fetch_wikipedia_extracts(places_data, progress_callback=None):
         if progress_callback:
             progress_callback(f"Fetching Wikipedia descriptions... ({batch_start}/{len(titles_list)})")
         try:
-            resp = sess.get(WIKIPEDIA_API, params={
+            resp = _api_get(sess, WIKIPEDIA_API, params={
                 "action": "query",
                 "titles": "|".join(batch),
                 "prop": "extracts",
@@ -206,7 +231,6 @@ def fetch_wikipedia_extracts(places_data, progress_callback=None):
                 "explaintext": True,
                 "exsentences": 5,
             })
-            resp.raise_for_status()
             pages = resp.json().get("query", {}).get("pages", {})
             for page in pages.values():
                 title = page.get("title", "")
@@ -269,14 +293,13 @@ def enrich_db_descriptions(progress_callback=None):
         for batch_start in range(0, len(qids), 50):
             batch = qids[batch_start:batch_start + 50]
             try:
-                resp = sess.get(WIKIDATA_API, params={
+                resp = _api_get(sess, WIKIDATA_API, params={
                     "action": "wbgetentities",
                     "ids": "|".join(batch),
                     "props": "sitelinks",
                     "sitefilter": "enwiki",
                     "format": "json",
                 })
-                resp.raise_for_status()
                 entities = resp.json().get("entities", {})
                 for qid, entity in entities.items():
                     title = entity.get("sitelinks", {}).get("enwiki", {}).get("title", "")
@@ -299,7 +322,7 @@ def enrich_db_descriptions(progress_callback=None):
             if progress_callback:
                 progress_callback(f"Enriching descriptions... ({batch_start}/{len(titles_list)})")
             try:
-                resp = sess.get(WIKIPEDIA_API, params={
+                resp = _api_get(sess, WIKIPEDIA_API, params={
                     "action": "query",
                     "titles": "|".join(batch),
                     "prop": "extracts",
@@ -308,7 +331,6 @@ def enrich_db_descriptions(progress_callback=None):
                     "explaintext": True,
                     "exsentences": 5,
                 })
-                resp.raise_for_status()
                 pages = resp.json().get("query", {}).get("pages", {})
                 for page in pages.values():
                     title = page.get("title", "")
@@ -450,7 +472,7 @@ def enrich_images(places_data, progress_callback=None):
         if progress_callback:
             progress_callback(f"Fetching Wikipedia images... ({batch_start}/{len(titles_list)})")
         try:
-            resp = sess.get(WIKIPEDIA_API, params={
+            resp = _api_get(sess, WIKIPEDIA_API, params={
                 "action": "query",
                 "titles": "|".join(batch),
                 "prop": "pageimages",
@@ -458,7 +480,6 @@ def enrich_images(places_data, progress_callback=None):
                 "pithumbsize": THUMB_WIDTH,
                 "pilicense": "any",
             })
-            resp.raise_for_status()
             pages = resp.json().get("query", {}).get("pages", {})
             for page in pages.values():
                 title = page.get("title", "")
@@ -503,7 +524,7 @@ def enrich_images(places_data, progress_callback=None):
             )
         titles = [p["name"] for _, p in batch]
         try:
-            resp = sess.get(WIKIPEDIA_API, params={
+            resp = _api_get(sess, WIKIPEDIA_API, params={
                 "action": "query",
                 "titles": "|".join(titles),
                 "prop": "pageimages",
@@ -512,7 +533,6 @@ def enrich_images(places_data, progress_callback=None):
                 "pilicense": "any",
                 "redirects": 1,
             })
-            resp.raise_for_status()
             data = resp.json().get("query", {})
             pages = data.get("pages", {})
             # Build normalized-title -> thumb lookup (handles redirects)
@@ -564,7 +584,7 @@ def enrich_images(places_data, progress_callback=None):
         if url:
             places_data[idx]["image_url"] = url
             resolved += 1
-        time.sleep(REQUEST_DELAY)
+        time.sleep(COMMONS_DELAY)
 
     if progress_callback:
         progress_callback(f"Image enrichment complete: {resolved} images resolved")
@@ -591,12 +611,32 @@ def enrich_db_images(progress_callback=None):
     if wd_rows:
         if progress_callback:
             progress_callback(f"Resolving images for {len(wd_rows)} Wikidata-linked places...")
-        for row in wd_rows:
-            url = image_from_wikidata(row[2], sess)
-            if url:
-                conn.execute("UPDATE places SET image_url = ? WHERE id = ?", (url, row[0]))
-                resolved += 1
-            time.sleep(REQUEST_DELAY)
+        # Batch Wikidata lookups (50 entities per request)
+        qid_to_id = {row[2]: row[0] for row in wd_rows}
+        qids = list(qid_to_id.keys())
+        for batch_start in range(0, len(qids), 50):
+            batch = qids[batch_start:batch_start + 50]
+            try:
+                resp = _api_get(sess, WIKIDATA_API, params={
+                    "action": "wbgetentities",
+                    "ids": "|".join(batch),
+                    "props": "claims",
+                    "format": "json",
+                })
+                if resp is None:
+                    continue
+                entities = resp.json().get("entities", {})
+                for qid, entity in entities.items():
+                    claims = entity.get("claims", {}).get("P18", [])
+                    if claims:
+                        filename = claims[0].get("mainsnak", {}).get("datavalue", {}).get("value", "")
+                        if filename:
+                            url = _commons_thumb_url(filename)
+                            conn.execute("UPDATE places SET image_url = ? WHERE id = ?", (url, qid_to_id[qid]))
+                            resolved += 1
+            except Exception as e:
+                logger.warning(f"Wikidata batch image lookup failed: {e}")
+            time.sleep(REQUEST_DELAY * 3)
         conn.commit()
 
     # 2. Places with wikipedia but no image
@@ -617,7 +657,7 @@ def enrich_db_images(progress_callback=None):
             if progress_callback:
                 progress_callback(f"Wikipedia image lookup... ({batch_start}/{len(titles_list)})")
             try:
-                resp = sess.get(WIKIPEDIA_API, params={
+                resp = _api_get(sess, WIKIPEDIA_API, params={
                     "action": "query",
                     "titles": "|".join(batch),
                     "prop": "pageimages",
@@ -625,7 +665,6 @@ def enrich_db_images(progress_callback=None):
                     "pithumbsize": THUMB_WIDTH,
                     "pilicense": "any",
                 })
-                resp.raise_for_status()
                 pages = resp.json().get("query", {}).get("pages", {})
                 for page in pages.values():
                     title = page.get("title", "")
@@ -658,7 +697,7 @@ def enrich_db_images(progress_callback=None):
             name_map = {row[1].lower(): row[0] for row in batch}
             titles = [row[1] for row in batch]
             try:
-                resp = sess.get(WIKIPEDIA_API, params={
+                resp = _api_get(sess, WIKIPEDIA_API, params={
                     "action": "query",
                     "titles": "|".join(titles),
                     "prop": "pageimages",
@@ -667,7 +706,6 @@ def enrich_db_images(progress_callback=None):
                     "pilicense": "any",
                     "redirects": 1,
                 })
-                resp.raise_for_status()
                 qdata = resp.json().get("query", {})
                 pages = qdata.get("pages", {})
                 thumb_map = {}
@@ -715,7 +753,7 @@ def enrich_db_images(progress_callback=None):
             if url:
                 conn.execute("UPDATE places SET image_url = ? WHERE id = ?", (url, row[0]))
                 resolved += 1
-            time.sleep(REQUEST_DELAY)
+            time.sleep(COMMONS_DELAY)
             if i % 100 == 99:
                 conn.commit()
         conn.commit()
