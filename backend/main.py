@@ -35,7 +35,7 @@ from backup import (
     start_scheduler as start_backup_scheduler
 )
 from overpass import sync_places
-from images import enrich_images, fetch_wikipedia_extracts, enrich_db_descriptions
+from images import enrich_images, fetch_wikipedia_extracts, enrich_db_descriptions, enrich_db_images
 from designations import sync_designations
 from geocoding import search_places as nominatim_search, batch_reverse_geocode
 from config import (
@@ -141,7 +141,7 @@ def check_api_rate_limit():
 
 
 # Sync state
-sync_status = {"running": False, "message": "", "progress": 0, "errors": []}
+sync_status = {"running": False, "message": "", "progress": 0, "errors": [], "cancel": False}
 
 
 def get_current_user():
@@ -1055,47 +1055,83 @@ def api_sync(user):
         sync_status["running"] = True
         sync_status["progress"] = 0
         sync_status["errors"] = []
+        sync_status["cancel"] = False
         try:
+            def check_cancel():
+                if sync_status["cancel"]:
+                    raise InterruptedError("Sync cancelled by user")
+
             def progress(msg):
+                check_cancel()
                 sync_status["message"] = msg
                 logger.info(msg)
 
             # 1. Overpass sync (OSM landscape data)
+            sync_status["progress"] = 5
             places = sync_places(progress_callback=progress)
 
             # 2. Natural England + NatureScot designations
+            sync_status["progress"] = 15
             progress("Fetching official designation data...")
             designation_places = sync_designations(progress_callback=progress)
             places.extend(designation_places)
 
             # 3. Enrich with images from Wikipedia/Wikidata
+            sync_status["progress"] = 25
             sync_status["message"] = "Resolving images from Wikipedia/Wikidata..."
             enrich_images(places, progress_callback=progress)
 
             # 3b. Fetch rich descriptions from Wikipedia
+            sync_status["progress"] = 35
             fetch_wikipedia_extracts(places, progress_callback=progress)
 
             # 4. Save all places
             sync_status["message"] = f"Saving {len(places)} places..."
+            sync_status["progress"] = 40
             for i, place in enumerate(places):
-                upsert_place(place)
                 if i % 100 == 0:
-                    sync_status["progress"] = int((i / max(len(places), 1)) * 80)
+                    check_cancel()
+                    sync_status["progress"] = 40 + int((i / max(len(places), 1)) * 30)
+                upsert_place(place)
+
+            sync_status["progress"] = 70
 
             # 4b. Enrich DB descriptions (places with wiki links but missing descriptions)
             progress("Enriching descriptions from Wikipedia...")
             enrich_db_descriptions(progress_callback=progress)
 
+            # 4c. Enrich DB images (name-based Wikipedia search for unlinked places)
+            sync_status["progress"] = 75
+            progress("Searching for additional images...")
+            enrich_db_images(progress_callback=progress)
+            sync_status["progress"] = 80
+
             # 5. Reverse geocode ALL places missing county/city (in batches)
-            progress("Reverse geocoding locations...")
+            progress("Counting places to geocode...")
+            total_missing = len(get_places_missing_location(limit=999999))
+            geocoded_so_far = 0
+
+            def geocode_progress(msg, current=0, total=0):
+                """Map geocoding progress to 80-95% of overall sync."""
+                nonlocal geocoded_so_far
+                done = geocoded_so_far + current
+                if total_missing > 0:
+                    pct = 80 + int((done / total_missing) * 15)
+                else:
+                    pct = 80
+                sync_status["progress"] = min(pct, 95)
+                sync_status["message"] = f"Reverse geocoding... ({done}/{total_missing})"
+                logger.info(msg)
+
             batch_num = 0
             while True:
+                check_cancel()
                 missing = get_places_missing_location(limit=GEOCODE_BATCH_SIZE)
                 if not missing:
                     break
                 batch_num += 1
-                progress(f"Reverse geocoding batch {batch_num} ({len(missing)} places)...")
-                geo_results = batch_reverse_geocode(missing, progress_callback=progress)
+                geocode_progress(f"Reverse geocoding batch {batch_num} ({len(missing)} places)...")
+                geo_results = batch_reverse_geocode(missing, progress_callback=geocode_progress)
                 for place_id, county, city, region, address in geo_results:
                     update_place_location(place_id, county, city, region, address)
                 # Rename coordinate-placeholder names using geocoded location
@@ -1115,11 +1151,15 @@ def api_sync(user):
                             )
                 conn2.commit()
                 conn2.close()
+                geocoded_so_far += len(missing)
                 # If we got no geocoding results, avoid infinite loop
                 if not geo_results:
                     break
 
+            sync_status["progress"] = 95
+
             # 6. Auto-feature places (prefer images + high hidden_score)
+            progress("Selecting featured places...")
             from models import get_db
             conn = get_db()
             conn.execute("UPDATE places SET featured = 0")
@@ -1140,12 +1180,17 @@ def api_sync(user):
 
             sync_status["message"] = f"Sync complete: {len(places)} places indexed"
             sync_status["progress"] = 100
+        except InterruptedError:
+            sync_status["message"] = "Sync cancelled"
+            sync_status["progress"] = 0
+            logger.info("Sync cancelled by user")
         except Exception as e:
             sync_status["message"] = f"Sync error: {str(e)}"
             sync_status["errors"].append(str(e))
             logger.error(f"Sync failed: {e}", exc_info=True)
         finally:
             sync_status["running"] = False
+            sync_status["cancel"] = False
 
     thread = threading.Thread(target=run_sync, daemon=True)
     thread.start()
@@ -1163,7 +1208,14 @@ def api_geocode(user):
         sync_status["running"] = True
         sync_status["progress"] = 0
         try:
-            def progress(msg):
+            total_missing = len(get_places_missing_location(limit=999999))
+            geocoded_so_far = 0
+
+            def progress(msg, current=0, total=0):
+                nonlocal geocoded_so_far
+                done = geocoded_so_far + current
+                if total_missing > 0:
+                    sync_status["progress"] = int((done / total_missing) * 100)
                 sync_status["message"] = msg
                 logger.info(msg)
 
@@ -1196,6 +1248,7 @@ def api_geocode(user):
                 conn2.commit()
                 conn2.close()
                 total_geocoded += len(geo_results)
+                geocoded_so_far += len(missing)
                 if not geo_results:
                     break
 
@@ -1210,6 +1263,16 @@ def api_geocode(user):
     thread = threading.Thread(target=run_geocode, daemon=True)
     thread.start()
     return jsonify({"status": "started"})
+
+
+@app.route("/api/sync/cancel", methods=["POST"])
+@admin_required
+def api_sync_cancel(user):
+    if not sync_status["running"]:
+        return jsonify({"status": "not_running"})
+    sync_status["cancel"] = True
+    sync_status["message"] = "Cancelling sync..."
+    return jsonify({"status": "cancelling"})
 
 
 @app.route("/api/sync/status")

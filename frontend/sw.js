@@ -1,4 +1,4 @@
-const CACHE_NAME = 'quiet-isles-v6';
+const CACHE_NAME = 'quiet-isles-v8';
 const STATIC_ASSETS = [
     '/',
     '/css/tailwind.css',
@@ -16,19 +16,27 @@ const STATIC_ASSETS = [
     '/js/pages/memories.js',
     '/js/pages/settings.js',
     '/manifest.json',
-    '/icon-192.png',
-    '/icon-512.png',
+    '/img/icons/icon-192x192.png',
+    '/img/icons/icon-512x512.png',
     '/assets/logo.png',
 ];
 
 // Install: cache static assets
 self.addEventListener('install', (event) => {
+    console.log('[SW] Installing new version...');
     event.waitUntil(
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(STATIC_ASSETS);
         })
     );
     self.skipWaiting();
+});
+
+// Listen for skip-waiting message from the page (future use)
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SKIP_WAITING') {
+        self.skipWaiting();
+    }
 });
 
 // Activate: clean old caches

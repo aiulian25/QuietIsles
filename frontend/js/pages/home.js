@@ -21,6 +21,15 @@ const HomePage = {
             // Check if we have data
             const stats = await API.getStats();
             if (stats.total_places === 0) {
+                // Check if a sync is already running (e.g. started from settings)
+                try {
+                    const syncState = await API.getSyncStatus();
+                    if (syncState.running) {
+                        container.innerHTML = this.renderSyncInProgress(syncState.message);
+                        this.pollExistingSync();
+                        return;
+                    }
+                } catch {}
                 container.innerHTML = this.renderEmptyState();
                 return;
             }
@@ -276,6 +285,43 @@ const HomePage = {
                 </div>
             </div>
         </div>`;
+    },
+
+    renderSyncInProgress(message) {
+        return `
+        <div class="pt-16">
+            ${this.renderDefaultHero()}
+            <div class="px-8 md:px-16 py-20 bg-surface">
+                <div class="bg-surface-container-low rounded-3xl p-12 text-center max-w-2xl mx-auto border border-outline-variant/10">
+                    <span class="material-symbols-outlined text-primary text-5xl mb-6 animate-spin">sync</span>
+                    <h2 class="font-headline text-2xl font-bold text-on-surface mb-4">Syncing Your Atlas</h2>
+                    <p class="text-on-surface-variant font-body mb-8 max-w-md mx-auto">
+                        Landscape data is being synced. This page will refresh automatically when complete.
+                    </p>
+                    <div id="sync-status" class="mt-6 text-sm text-outline">
+                        <div class="qi-spinner mx-auto mb-4"></div>
+                        <p id="sync-message">${Card.escapeHtml(message || 'Syncing...')}</p>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+    },
+
+    pollExistingSync() {
+        const poll = setInterval(async () => {
+            try {
+                const s = await API.getSyncStatus();
+                const msg = document.getElementById('sync-message');
+                if (msg) msg.textContent = s.message || 'Syncing...';
+
+                if (!s.running && s.progress >= 100) {
+                    clearInterval(poll);
+                    setTimeout(() => this.render(), 1000);
+                }
+            } catch (e) {
+                clearInterval(poll);
+            }
+        }, 2000);
     },
 
     async startSync() {

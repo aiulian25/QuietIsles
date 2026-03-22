@@ -9,21 +9,32 @@
     <meta name="description" content="Quiet Isles — Discover beautiful UK landscape places. Mountains, beaches, cliffs, viewpoints, trails and protected areas."/>
     <title>Quiet Isles</title>
     <link rel="manifest" href="/manifest.json"/>
-    <link rel="icon" type="image/png" href="/assets/logo.png"/>
-    <link rel="apple-touch-icon" href="/icon-192.png"/>
+    <link rel="icon" type="image/png" href="/img/icons/icon-96x96.png"/>
+    <link rel="apple-touch-icon" href="/img/icons/apple-touch-icon.png"/>
     <link rel="stylesheet" href="/css/tailwind.css"/>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="/css/app.css"/>
+
+    <!-- Early PWA install prompt capture - must be before any module scripts -->
+    <script>
+      window.deferredPWAPrompt = null;
+      window.addEventListener('beforeinstallprompt', function(e) {
+        e.preventDefault();
+        window.deferredPWAPrompt = e;
+        console.log('[PWA] Install prompt captured early');
+        window.dispatchEvent(new CustomEvent('pwa-install-available'));
+      });
+    </script>
 </head>
 <body class="bg-surface text-on-surface font-body selection:bg-primary selection:text-on-primary overscroll-none">
     <div id="app" class="flex min-h-screen">
         <!-- Desktop Sidebar -->
         <aside id="sidebar" class="hidden md:flex flex-col py-8 px-6 h-screen sticky top-0 bg-[#0d0f0e] border-r border-[#434946]/15 w-64 z-40">
             <a href="/" data-link class="flex items-center gap-3 mb-8">
-                <img src="/assets/logo.png" alt="Quiet Isles" class="w-8 h-8 rounded-lg"/>
+                <img src="/img/icons/icon-192x192.png" alt="Quiet Isles" class="w-8 h-8 rounded-full"/>
                 <span class="text-xl font-bold text-primary font-headline tracking-tighter">Quiet Isles</span>
             </a>
             <nav id="sidebar-nav" class="flex flex-col gap-2 flex-grow">

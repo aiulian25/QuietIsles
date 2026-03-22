@@ -131,6 +131,10 @@ const SettingsPage = {
                             class="bg-primary text-on-primary px-6 py-3 rounded-full font-headline font-bold text-sm tracking-wide hover:scale-[1.02] transition-transform flex items-center gap-2">
                             <span class="material-symbols-outlined text-sm">sync</span> Start Full Sync
                         </button>
+                        <button id="settings-sync-cancel-btn" onclick="SettingsPage.cancelSync()"
+                            class="hidden bg-red-500/20 text-red-400 border border-red-500/30 px-6 py-3 rounded-full font-headline font-bold text-sm tracking-wide hover:bg-red-500/30 transition-all flex items-center gap-2 mt-3">
+                            <span class="material-symbols-outlined text-sm">stop_circle</span> Stop Sync
+                        </button>
                         <div id="sync-progress-area" class="hidden mt-6">
                             <div class="flex items-center justify-between mb-2">
                                 <span id="sync-progress-msg" class="text-sm text-on-surface-variant">Starting...</span>
@@ -447,8 +451,10 @@ const SettingsPage = {
     // --- Sync ---
     async startSync() {
         const btn = document.getElementById('settings-sync-btn');
+        const cancelBtn = document.getElementById('settings-sync-cancel-btn');
         const area = document.getElementById('sync-progress-area');
         if (btn) btn.disabled = true;
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
         if (area) area.classList.remove('hidden');
 
         try {
@@ -457,6 +463,17 @@ const SettingsPage = {
         } catch (err) {
             this.showSyncError(err.message);
             if (btn) btn.disabled = false;
+            if (cancelBtn) cancelBtn.classList.add('hidden');
+        }
+    },
+
+    async cancelSync() {
+        const cancelBtn = document.getElementById('settings-sync-cancel-btn');
+        if (cancelBtn) { cancelBtn.disabled = true; cancelBtn.textContent = 'Cancelling...'; }
+        try {
+            await API.cancelSync();
+        } catch (err) {
+            this.showSyncError(err.message);
         }
     },
 
@@ -466,6 +483,7 @@ const SettingsPage = {
             try {
                 const s = await API.getSyncStatus();
                 const btn = document.getElementById('settings-sync-btn');
+                const cancelBtn = document.getElementById('settings-sync-cancel-btn');
                 const area = document.getElementById('sync-progress-area');
                 const msg = document.getElementById('sync-progress-msg');
                 const pct = document.getElementById('sync-progress-pct');
@@ -477,6 +495,8 @@ const SettingsPage = {
                 if (s.running) {
                     area.classList.remove('hidden');
                     if (btn) btn.disabled = true;
+                    if (cancelBtn) cancelBtn.classList.remove('hidden');
+                    if (cancelBtn) { cancelBtn.disabled = false; cancelBtn.innerHTML = '<span class="material-symbols-outlined text-sm">stop_circle</span> Stop Sync'; }
                     if (msg) msg.textContent = s.message || 'Syncing...';
                     if (pct) pct.textContent = `${s.progress || 0}%`;
                     if (bar) bar.style.width = `${s.progress || 0}%`;
@@ -485,9 +505,11 @@ const SettingsPage = {
                     if (pct) pct.textContent = '100%';
                     if (bar) bar.style.width = '100%';
                     if (btn) { btn.disabled = false; }
+                    if (cancelBtn) cancelBtn.classList.add('hidden');
                     clearInterval(this._syncPoll); this._syncPoll = null;
                 } else {
                     if (btn) btn.disabled = false;
+                    if (cancelBtn) cancelBtn.classList.add('hidden');
                     area.classList.add('hidden');
                     clearInterval(this._syncPoll); this._syncPoll = null;
                 }

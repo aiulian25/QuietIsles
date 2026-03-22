@@ -98,8 +98,8 @@ def batch_reverse_geocode(places, progress_callback=None):
     total = len(places)
 
     for i, place in enumerate(places):
-        if progress_callback and i % 10 == 0:
-            progress_callback(f"Reverse geocoding... ({i}/{total})")
+        if progress_callback:
+            progress_callback(f"Reverse geocoding... ({i}/{total})", i, total)
 
         data = reverse_geocode(place["lat"], place["lon"])
         address = data.get("address", {})
@@ -115,6 +115,6 @@ def batch_reverse_geocode(places, progress_callback=None):
         time.sleep(GEOCODE_DELAY)
 
     if progress_callback:
-        progress_callback(f"Geocoding complete: {len(results)}/{total} places enriched")
+        progress_callback(f"Geocoding complete: {len(results)}/{total} places enriched", total, total)
 
     return results

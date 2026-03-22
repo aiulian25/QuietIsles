@@ -158,6 +158,10 @@ const API = {
         return this.post('/api/sync');
     },
 
+    cancelSync() {
+        return this.post('/api/sync/cancel');
+    },
+
     getSyncStatus() {
         return this.get('/api/sync/status');
     },

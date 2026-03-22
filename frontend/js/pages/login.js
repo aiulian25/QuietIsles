@@ -31,7 +31,7 @@ const LoginPage = {
         <div class="min-h-screen flex items-center justify-center px-6">
             <div class="w-full max-w-md">
                 <div class="text-center mb-10">
-                    <img src="/assets/logo.png" alt="Quiet Isles" class="w-16 h-16 rounded-2xl mx-auto mb-4"/>
+                    <img src="/img/icons/icon-192x192.png" alt="Quiet Isles" class="w-16 h-16 rounded-full mx-auto mb-4"/>
                     <h1 class="font-headline text-3xl font-bold text-on-surface tracking-tight">Welcome Back</h1>
                     <p class="text-on-surface-variant text-sm mt-2">Sign in to Quiet Isles</p>
                 </div>
@@ -73,7 +73,7 @@ const LoginPage = {
         <div class="min-h-screen flex items-center justify-center px-6">
             <div class="w-full max-w-md">
                 <div class="text-center mb-10">
-                    <img src="/assets/logo.png" alt="Quiet Isles" class="w-16 h-16 rounded-2xl mx-auto mb-4"/>
+                    <img src="/img/icons/icon-192x192.png" alt="Quiet Isles" class="w-16 h-16 rounded-full mx-auto mb-4"/>
                     <h1 class="font-headline text-3xl font-bold text-on-surface tracking-tight">Create Admin Account</h1>
                     <p class="text-on-surface-variant text-sm mt-2">Set up your Quiet Isles instance</p>
                 </div>

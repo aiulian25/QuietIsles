@@ -409,7 +409,198 @@ def enrich_images(places_data, progress_callback=None):
                 resolved += 1
             time.sleep(REQUEST_DELAY)
 
+    # Search Wikipedia by name for places with no wiki links at all
+    no_link = [
+        (i, p) for i, p in enumerate(places_data)
+        if not is_valid_image_url(p.get("image_url", ""))
+        and not p.get("wikipedia") and not p.get("wikidata")
+        and p.get("name") and " at " not in p["name"]
+    ]
+    if no_link and progress_callback:
+        progress_callback(f"Searching Wikipedia images for {len(no_link)} unlinked places...")
+
+    for batch_start in range(0, len(no_link), 50):
+        batch = no_link[batch_start:batch_start + 50]
+        if progress_callback:
+            progress_callback(
+                f"Wikipedia image search... ({batch_start}/{len(no_link)})"
+            )
+        titles = [p["name"] for _, p in batch]
+        try:
+            resp = sess.get(WIKIPEDIA_API, params={
+                "action": "query",
+                "titles": "|".join(titles),
+                "prop": "pageimages",
+                "format": "json",
+                "pithumbsize": THUMB_WIDTH,
+                "pilicense": "any",
+                "redirects": 1,
+            })
+            resp.raise_for_status()
+            data = resp.json().get("query", {})
+            pages = data.get("pages", {})
+            # Build normalized-title -> thumb lookup (handles redirects)
+            thumb_map = {}
+            for page in pages.values():
+                title = page.get("title", "")
+                thumb = page.get("thumbnail", {}).get("source", "")
+                if thumb:
+                    thumb_map[title.lower()] = thumb
+            # Also map from redirect sources
+            for redir in data.get("redirects", []):
+                target = redir.get("to", "").lower()
+                source = redir.get("from", "").lower()
+                if target in thumb_map:
+                    thumb_map[source] = thumb_map[target]
+            for norm in data.get("normalized", []):
+                target = norm.get("to", "").lower()
+                source = norm.get("from", "").lower()
+                if target in thumb_map:
+                    thumb_map[source] = thumb_map[target]
+
+            for idx, place in batch:
+                name_lower = place["name"].lower()
+                if name_lower in thumb_map:
+                    places_data[idx]["image_url"] = thumb_map[name_lower]
+                    resolved += 1
+        except Exception as e:
+            logger.warning(f"Wikipedia name-search batch failed: {e}")
+        time.sleep(REQUEST_DELAY * 2)
+
     if progress_callback:
         progress_callback(f"Image enrichment complete: {resolved} images resolved")
 
+    return resolved
+
+
+def enrich_db_images(progress_callback=None):
+    """
+    Find DB places missing images and try to resolve them via Wikipedia name search.
+    This covers places that were already saved but had no wiki links at sync time.
+    """
+    from models import get_db
+    conn = get_db()
+
+    # 1. Places with wikidata but no image
+    wd_rows = conn.execute(
+        "SELECT id, name, wikidata FROM places WHERE wikidata != '' AND image_url = ''"
+    ).fetchall()
+
+    sess = _session()
+    resolved = 0
+
+    if wd_rows:
+        if progress_callback:
+            progress_callback(f"Resolving images for {len(wd_rows)} Wikidata-linked places...")
+        for row in wd_rows:
+            url = image_from_wikidata(row[2], sess)
+            if url:
+                conn.execute("UPDATE places SET image_url = ? WHERE id = ?", (url, row[0]))
+                resolved += 1
+            time.sleep(REQUEST_DELAY)
+        conn.commit()
+
+    # 2. Places with wikipedia but no image
+    wp_rows = conn.execute(
+        "SELECT id, name, wikipedia FROM places WHERE wikipedia != '' AND image_url = '' LIMIT 500"
+    ).fetchall()
+
+    if wp_rows:
+        titles_map = {}  # title -> place_id
+        for row in wp_rows:
+            wp = row[2]
+            title = wp.split(":", 1)[1] if ":" in wp and len(wp.split(":")[0]) <= 3 else wp
+            titles_map[title] = row[0]
+
+        titles_list = list(titles_map.keys())
+        for batch_start in range(0, len(titles_list), 50):
+            batch = titles_list[batch_start:batch_start + 50]
+            if progress_callback:
+                progress_callback(f"Wikipedia image lookup... ({batch_start}/{len(titles_list)})")
+            try:
+                resp = sess.get(WIKIPEDIA_API, params={
+                    "action": "query",
+                    "titles": "|".join(batch),
+                    "prop": "pageimages",
+                    "format": "json",
+                    "pithumbsize": THUMB_WIDTH,
+                    "pilicense": "any",
+                })
+                resp.raise_for_status()
+                pages = resp.json().get("query", {}).get("pages", {})
+                for page in pages.values():
+                    title = page.get("title", "")
+                    thumb = page.get("thumbnail", {}).get("source", "")
+                    if thumb and title in titles_map:
+                        conn.execute(
+                            "UPDATE places SET image_url = ? WHERE id = ?",
+                            (thumb, titles_map[title]),
+                        )
+                        resolved += 1
+            except Exception as e:
+                logger.warning(f"Wikipedia image batch failed: {e}")
+            time.sleep(REQUEST_DELAY * 2)
+        conn.commit()
+
+    # 3. Places with no wiki links — search by name
+    name_rows = conn.execute("""
+        SELECT id, name FROM places
+        WHERE image_url = '' AND wikipedia = '' AND wikidata = ''
+        AND name != '' AND name NOT LIKE '%% at %%'
+    """).fetchall()
+
+    if name_rows:
+        if progress_callback:
+            progress_callback(f"Searching Wikipedia by name for {len(name_rows)} places...")
+        for batch_start in range(0, len(name_rows), 50):
+            batch = name_rows[batch_start:batch_start + 50]
+            if progress_callback:
+                progress_callback(f"Wikipedia name search... ({batch_start}/{len(name_rows)})")
+            name_map = {row[1].lower(): row[0] for row in batch}
+            titles = [row[1] for row in batch]
+            try:
+                resp = sess.get(WIKIPEDIA_API, params={
+                    "action": "query",
+                    "titles": "|".join(titles),
+                    "prop": "pageimages",
+                    "format": "json",
+                    "pithumbsize": THUMB_WIDTH,
+                    "pilicense": "any",
+                    "redirects": 1,
+                })
+                resp.raise_for_status()
+                qdata = resp.json().get("query", {})
+                pages = qdata.get("pages", {})
+                thumb_map = {}
+                for page in pages.values():
+                    t = page.get("title", "")
+                    thumb = page.get("thumbnail", {}).get("source", "")
+                    if thumb:
+                        thumb_map[t.lower()] = thumb
+                for redir in qdata.get("redirects", []):
+                    target = redir.get("to", "").lower()
+                    source = redir.get("from", "").lower()
+                    if target in thumb_map:
+                        thumb_map[source] = thumb_map[target]
+                for norm in qdata.get("normalized", []):
+                    target = norm.get("to", "").lower()
+                    source = norm.get("from", "").lower()
+                    if target in thumb_map:
+                        thumb_map[source] = thumb_map[target]
+
+                for name_lower, place_id in name_map.items():
+                    if name_lower in thumb_map:
+                        conn.execute(
+                            "UPDATE places SET image_url = ? WHERE id = ?",
+                            (thumb_map[name_lower], place_id),
+                        )
+                        resolved += 1
+            except Exception as e:
+                logger.warning(f"Wikipedia name-search batch failed: {e}")
+            time.sleep(REQUEST_DELAY * 2)
+        conn.commit()
+
+    conn.close()
+    if progress_callback:
+        progress_callback(f"DB image enrichment: {resolved} new images resolved")
     return resolved

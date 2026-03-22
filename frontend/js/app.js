@@ -197,9 +197,142 @@ document.addEventListener('DOMContentLoaded', () => {
     Router.init();
 });
 
-// Register service worker
+// --- PWA: Install Prompt + Update Notification ---
+const PWA = {
+    deferredPrompt: null,
+    registration: null,
+
+    init() {
+        // Pick up early-captured prompt
+        if (window.deferredPWAPrompt) {
+            this.deferredPrompt = window.deferredPWAPrompt;
+            this.showInstallBanner();
+        }
+
+        // Listen for late prompt
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            this.deferredPrompt = e;
+            this.showInstallBanner();
+        });
+
+        // Listen for custom event from early capture
+        window.addEventListener('pwa-install-available', () => {
+            if (window.deferredPWAPrompt && !this.deferredPrompt) {
+                this.deferredPrompt = window.deferredPWAPrompt;
+                this.showInstallBanner();
+            }
+        });
+
+        window.addEventListener('appinstalled', () => {
+            this.deferredPrompt = null;
+            this.hideToast('pwa-install-toast');
+        });
+
+        // Register service worker with update detection
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js').then((reg) => {
+                this.registration = reg;
+
+                // Check for waiting worker from previous session
+                if (reg.waiting && navigator.serviceWorker.controller) {
+                    this.showUpdateBanner(reg.waiting);
+                }
+
+                // Detect new updates — with skipWaiting the new SW activates immediately,
+                // but show a toast so user knows new content is available
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    if (!newWorker) return;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'activated' && navigator.serviceWorker.controller) {
+                            this.showUpdateBanner();
+                        }
+                    });
+                });
+
+                // Also detect controller change (covers skipWaiting scenario)
+                let hasController = !!navigator.serviceWorker.controller;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (hasController) {
+                        // Controller changed after page load = update happened
+                        this.showUpdateBanner();
+                    }
+                    hasController = true;
+                });
+            }).catch(() => {});
+        }
+    },
+
+    showInstallBanner() {
+        // Don't show if already installed
+        if (window.matchMedia('(display-mode: standalone)').matches) return;
+        if (document.getElementById('pwa-install-toast')) return;
+
+        setTimeout(() => {
+            const toast = document.createElement('div');
+            toast.id = 'pwa-install-toast';
+            toast.className = 'pwa-toast';
+            toast.innerHTML = `
+                <div class="flex items-center gap-3 flex-1 min-w-0">
+                    <span class="material-symbols-outlined text-primary">download</span>
+                    <span class="text-sm text-on-surface font-medium truncate">Install Quiet Isles for quick access</span>
+                </div>
+                <div class="flex items-center gap-2 shrink-0">
+                    <button onclick="PWA.installApp()" class="bg-primary text-on-primary px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide hover:scale-105 transition-transform">Install</button>
+                    <button onclick="PWA.hideToast('pwa-install-toast')" class="text-outline hover:text-on-surface p-1"><span class="material-symbols-outlined text-sm">close</span></button>
+                </div>`;
+            document.body.appendChild(toast);
+            requestAnimationFrame(() => toast.classList.add('show'));
+        }, 3000);
+    },
+
+    showUpdateBanner() {
+        if (document.getElementById('pwa-update-toast')) return;
+
+        const toast = document.createElement('div');
+        toast.id = 'pwa-update-toast';
+        toast.className = 'pwa-toast';
+        toast.innerHTML = `
+            <div class="flex items-center gap-3 flex-1 min-w-0">
+                <span class="material-symbols-outlined text-primary">update</span>
+                <span class="text-sm text-on-surface font-medium truncate">A new version is available</span>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+                <button onclick="PWA.applyUpdate()" class="bg-primary text-on-primary px-4 py-1.5 rounded-full text-xs font-bold uppercase tracking-wide hover:scale-105 transition-transform">Refresh</button>
+                <button onclick="PWA.hideToast('pwa-update-toast')" class="text-outline hover:text-on-surface p-1"><span class="material-symbols-outlined text-sm">close</span></button>
+            </div>`;
+        document.body.appendChild(toast);
+        requestAnimationFrame(() => toast.classList.add('show'));
+    },
+
+    async installApp() {
+        if (!this.deferredPrompt) return;
+        try {
+            await this.deferredPrompt.prompt();
+            const { outcome } = await this.deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                this.deferredPrompt = null;
+                this.hideToast('pwa-install-toast');
+            }
+        } catch {}
+    },
+
+    applyUpdate() {
+        this.hideToast('pwa-update-toast');
+        window.location.reload();
+    },
+
+    hideToast(id) {
+        const el = document.getElementById(id);
+        if (el) {
+            el.classList.remove('show');
+            setTimeout(() => el.remove(), 300);
+        }
+    }
+};
+
+// Init PWA handling
 if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/sw.js').catch(() => {});
-    });
+    window.addEventListener('load', () => PWA.init());
 }
