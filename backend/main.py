@@ -1134,6 +1134,7 @@ def api_sync(user):
                 geo_results = batch_reverse_geocode(missing, progress_callback=geocode_progress)
                 for place_id, county, city, region, address in geo_results:
                     update_place_location(place_id, county, city, region, address)
+                geocoded_so_far += len(missing)
                 # Rename coordinate-placeholder names using geocoded location
                 from models import get_db as _get_db
                 conn2 = _get_db()
@@ -1230,6 +1231,7 @@ def api_geocode(user):
                 geo_results = batch_reverse_geocode(missing, progress_callback=progress)
                 for place_id, county, city, region, address in geo_results:
                     update_place_location(place_id, county, city, region, address)
+                geocoded_so_far += len(missing)
                 # Rename coordinate-placeholder names
                 from models import get_db as _get_db
                 conn2 = _get_db()

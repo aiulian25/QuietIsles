@@ -109,7 +109,7 @@ def batch_reverse_geocode(places, progress_callback=None):
             results.append((place["id"], county, city, region, formatted))
         else:
             # Mark as geocoded (no data found) to avoid infinite retry
-            results.append((place["id"], "-", "", "", ""))
+            results.append((place["id"], "-", "", "", "-"))
 
         # Nominatim requires max 1 request per second
         time.sleep(GEOCODE_DELAY)

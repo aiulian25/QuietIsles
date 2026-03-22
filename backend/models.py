@@ -199,8 +199,8 @@ def upsert_place(place_data):
 def update_place_location(place_id, county="", city="", region="", address=""):
     """Update location info for a place (from reverse geocoding)."""
     conn = get_db()
-    sets = []
-    params = []
+    sets = ["address = ?"]
+    params = [address or "-"]
     if county:
         sets.append("county = ?")
         params.append(county)
@@ -210,21 +210,17 @@ def update_place_location(place_id, county="", city="", region="", address=""):
     if region:
         sets.append("region = ?")
         params.append(region)
-    if address:
-        sets.append("address = ?")
-        params.append(address)
-    if sets:
-        params.append(place_id)
-        conn.execute(f"UPDATE places SET {', '.join(sets)} WHERE id = ?", params)
-        conn.commit()
+    params.append(place_id)
+    conn.execute(f"UPDATE places SET {', '.join(sets)} WHERE id = ?", params)
+    conn.commit()
     conn.close()
 
 
 def get_places_missing_location(limit=100):
-    """Get places that need reverse geocoding (no county or no address)."""
+    """Get places that need reverse geocoding (no address)."""
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, lat, lon, name FROM places WHERE (county = '' OR address = '') AND lat != 0 LIMIT ?",
+        "SELECT id, lat, lon, name FROM places WHERE address = '' AND lat != 0 LIMIT ?",
         (limit,)
     ).fetchall()
     conn.close()
