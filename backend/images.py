@@ -11,6 +11,7 @@ logger = logging.getLogger(__name__)
 
 WIKIPEDIA_API = "https://en.wikipedia.org/w/api.php"
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+COMMONS_API = "https://commons.wikimedia.org/w/api.php"
 THUMB_WIDTH = 800
 REQUEST_DELAY = 0.1  # seconds between API calls
 
@@ -95,6 +96,46 @@ def image_from_commons_tag(tag_value):
         return _commons_thumb_url(tag_value)
     if tag_value.startswith("Category:"):
         return ""  # Can't resolve category to a single image easily
+    return ""
+
+
+def image_from_commons_search(name, category="", county="", sess=None):
+    """
+    Search Wikimedia Commons for an image matching a place name.
+    Appends category/county for disambiguation.
+    Returns thumbnail URL or empty string.
+    """
+    if not name:
+        return ""
+    query = name
+    if county:
+        query += f" {county}"
+    elif category:
+        label = category.replace("_", " ")
+        query += f" {label}"
+
+    sess = sess or _session()
+    try:
+        resp = sess.get(COMMONS_API, params={
+            "action": "query",
+            "generator": "search",
+            "gsrnamespace": 6,  # File namespace
+            "gsrsearch": query,
+            "gsrlimit": 1,
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": THUMB_WIDTH,
+            "format": "json",
+        })
+        resp.raise_for_status()
+        pages = resp.json().get("query", {}).get("pages", {})
+        for page in pages.values():
+            info = page.get("imageinfo", [{}])[0]
+            thumb = info.get("thumburl", "")
+            if thumb:
+                return thumb
+    except Exception as e:
+        logger.debug(f"Commons search failed for '{query}': {e}")
     return ""
 
 
@@ -190,6 +231,7 @@ def enrich_db_descriptions(progress_callback=None):
     """
     Fetch Wikipedia descriptions for DB records that have wikipedia/wikidata
     links but short/empty descriptions. Operates directly on the database.
+    Also generates basic descriptions for places with no wiki links.
     """
     from models import get_db
     conn = get_db()
@@ -245,49 +287,85 @@ def enrich_db_descriptions(progress_callback=None):
             time.sleep(REQUEST_DELAY * 2)
 
     if not needs_desc:
-        conn.close()
-        return 0
+        wiki_enriched = 0
+    else:
+        # Fetch Wikipedia extracts and update DB
+        sess = _session()
+        wiki_enriched = 0
+        titles_list = list(needs_desc.keys())
 
-    # Fetch Wikipedia extracts and update DB
-    sess = _session()
-    enriched = 0
-    titles_list = list(needs_desc.keys())
+        for batch_start in range(0, len(titles_list), 20):
+            batch = titles_list[batch_start:batch_start + 20]
+            if progress_callback:
+                progress_callback(f"Enriching descriptions... ({batch_start}/{len(titles_list)})")
+            try:
+                resp = sess.get(WIKIPEDIA_API, params={
+                    "action": "query",
+                    "titles": "|".join(batch),
+                    "prop": "extracts",
+                    "format": "json",
+                    "exintro": True,
+                    "explaintext": True,
+                    "exsentences": 5,
+                })
+                resp.raise_for_status()
+                pages = resp.json().get("query", {}).get("pages", {})
+                for page in pages.values():
+                    title = page.get("title", "")
+                    extract = page.get("extract", "").strip()
+                    if extract and title in needs_desc:
+                        place_id = needs_desc[title]
+                        conn.execute(
+                            "UPDATE places SET description = ? WHERE id = ? AND length(description) < ?",
+                            (extract, place_id, len(extract)),
+                        )
+                        wiki_enriched += 1
+            except Exception as e:
+                logger.warning(f"Wikipedia extract batch failed: {e}")
+            time.sleep(REQUEST_DELAY * 2)
 
-    for batch_start in range(0, len(titles_list), 20):
-        batch = titles_list[batch_start:batch_start + 20]
+        conn.commit()
+
+    # Generate descriptions for places with no wiki links and no description
+    _CATEGORY_DESCRIPTIONS = {
+        "beach": "A scenic beach along the coastline of {region}, offering sandy shores and coastal views.",
+        "peak": "A notable summit in {region}, providing panoramic views of the surrounding landscape.",
+        "nature_reserve": "A protected nature reserve in {region}, home to diverse wildlife and natural habitats.",
+        "cliff": "A dramatic cliff formation in {region}, showcasing the rugged beauty of the coastline.",
+        "moor": "An expansive moorland in {region}, characterized by open heathland and rolling terrain.",
+        "waterfall": "A picturesque waterfall in {region}, where water cascades through the natural landscape.",
+        "viewpoint": "A scenic viewpoint in {region}, offering sweeping views across the surrounding countryside.",
+        "heath": "A heathland area in {region}, featuring open terrain with heather and native flora.",
+        "national_park": "Part of a protected national park in {region}, preserving outstanding natural beauty.",
+        "aonb": "Located within an Area of Outstanding Natural Beauty in {region}, recognised for its exceptional landscape.",
+        "national_trail": "A section of a national trail in {region}, offering long-distance walking through beautiful scenery.",
+    }
+
+    no_desc_rows = conn.execute("""
+        SELECT id, name, category, county, region FROM places
+        WHERE (description = '' OR description IS NULL)
+        AND name != '' AND name NOT LIKE '%% at %%'
+    """).fetchall()
+
+    generated = 0
+    if no_desc_rows:
         if progress_callback:
-            progress_callback(f"Enriching descriptions... ({batch_start}/{len(titles_list)})")
-        try:
-            resp = sess.get(WIKIPEDIA_API, params={
-                "action": "query",
-                "titles": "|".join(batch),
-                "prop": "extracts",
-                "format": "json",
-                "exintro": True,
-                "explaintext": True,
-                "exsentences": 5,
-            })
-            resp.raise_for_status()
-            pages = resp.json().get("query", {}).get("pages", {})
-            for page in pages.values():
-                title = page.get("title", "")
-                extract = page.get("extract", "").strip()
-                if extract and title in needs_desc:
-                    place_id = needs_desc[title]
-                    conn.execute(
-                        "UPDATE places SET description = ? WHERE id = ? AND length(description) < ?",
-                        (extract, place_id, len(extract)),
-                    )
-                    enriched += 1
-        except Exception as e:
-            logger.warning(f"Wikipedia extract batch failed: {e}")
-        time.sleep(REQUEST_DELAY * 2)
+            progress_callback(f"Generating descriptions for {len(no_desc_rows)} places...")
+        for row in no_desc_rows:
+            pid, name, category, county, region = row[0], row[1], row[2], row[3] or "", row[4] or ""
+            location = county or region or "the United Kingdom"
+            template = _CATEGORY_DESCRIPTIONS.get(category)
+            if template:
+                desc = f"{name}. {template.format(region=location)}"
+                conn.execute("UPDATE places SET description = ? WHERE id = ?", (desc, pid))
+                generated += 1
+        conn.commit()
 
-    conn.commit()
     conn.close()
+    enriched = wiki_enriched + generated
 
     if progress_callback:
-        progress_callback(f"DB description enrichment: {enriched} descriptions updated")
+        progress_callback(f"Description enrichment: {wiki_enriched} from Wikipedia, {generated} generated")
 
     return enriched
 
@@ -297,9 +375,7 @@ def is_valid_image_url(url):
     if not url:
         return False
     lower = url.lower().split("?")[0]
-    # Reject known non-image URLs
-    if "geograph.org" in lower:
-        return False
+    # Reject non-URL values
     if lower.startswith("category:") or lower.startswith("file:"):
         return False
     image_extensions = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".svg")
@@ -467,6 +543,29 @@ def enrich_images(places_data, progress_callback=None):
             logger.warning(f"Wikipedia name-search batch failed: {e}")
         time.sleep(REQUEST_DELAY * 2)
 
+    # Stage 4: Wikimedia Commons search for remaining places without images
+    no_image = [
+        (i, p) for i, p in enumerate(places_data)
+        if not is_valid_image_url(p.get("image_url", ""))
+        and p.get("name") and " at " not in p["name"]
+    ]
+    if no_image and progress_callback:
+        progress_callback(f"Searching Wikimedia Commons for {len(no_image)} places...")
+
+    for j, (idx, place) in enumerate(no_image):
+        if progress_callback and j % 50 == 0:
+            progress_callback(f"Commons search... ({j}/{len(no_image)})")
+        url = image_from_commons_search(
+            place["name"],
+            category=place.get("category", ""),
+            county=place.get("county", ""),
+            sess=sess,
+        )
+        if url:
+            places_data[idx]["image_url"] = url
+            resolved += 1
+        time.sleep(REQUEST_DELAY)
+
     if progress_callback:
         progress_callback(f"Image enrichment complete: {resolved} images resolved")
 
@@ -598,6 +697,27 @@ def enrich_db_images(progress_callback=None):
             except Exception as e:
                 logger.warning(f"Wikipedia name-search batch failed: {e}")
             time.sleep(REQUEST_DELAY * 2)
+        conn.commit()
+
+    # 4. Wikimedia Commons search for remaining places without images
+    commons_rows = conn.execute("""
+        SELECT id, name, category, county FROM places
+        WHERE image_url = '' AND name != '' AND name NOT LIKE '%% at %%'
+    """).fetchall()
+
+    if commons_rows:
+        if progress_callback:
+            progress_callback(f"Searching Wikimedia Commons for {len(commons_rows)} places...")
+        for i, row in enumerate(commons_rows):
+            if progress_callback and i % 50 == 0:
+                progress_callback(f"Commons search... ({i}/{len(commons_rows)})")
+            url = image_from_commons_search(row[1], category=row[2], county=row[3], sess=sess)
+            if url:
+                conn.execute("UPDATE places SET image_url = ? WHERE id = ?", (url, row[0]))
+                resolved += 1
+            time.sleep(REQUEST_DELAY)
+            if i % 100 == 99:
+                conn.commit()
         conn.commit()
 
     conn.close()
